@@ -17,6 +17,16 @@ strike-by-strike.
 > expiry week, because at DTE 1 the data stops being a smile at all.
 > All three claims are measured below, from the exchange's own files.
 
+## Contents
+- [Headline numbers](#headline-numbers-all-real-all-reproduced-by-python-mainpy)
+- [Quickstart](#quickstart)
+- [The cases](#the-cases)
+- [The maths](#the-maths)
+- [Data provenance & regeneration](#data-provenance--regeneration)
+- [Conventions that matter](#conventions-that-matter-the-lessons-are-in-the-data)
+- [Limitations](#limitations--read-before-citing-a-number)
+- [Structure](#structure) · [Author](#author)
+
 ## Headline numbers (all real, all reproduced by `python main.py`)
 
 | Quantity | Value |
