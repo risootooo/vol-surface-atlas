@@ -3,8 +3,9 @@
 Groups: Black-Scholes pricing (textbook values, parity), IV solver
 (round-trip, no-arb honesty), SVI (parameter recovery on a synthetic
 SVI smile, g-function), surface metrics (toy smile with known slope),
-PCA (variance accounting, level-shift detection), and invariants of
-the shipped REAL bhavcopy panel.
+PCA (variance accounting, level-shift detection), chain extraction
+(synthetic bhavcopy: spot, expiries, OTM-only IV recovery), and
+invariants of the shipped REAL bhavcopy panel.
 """
 
 from pathlib import Path
@@ -13,10 +14,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from volatlas.chain import chain_iv, extract_chain, list_expiries, load_bhavcopy, nifty_spot
 from volatlas.dynamics import pca_on_changes
 from volatlas.events import biggest_moves
 from volatlas.iv import implied_vol
-from volatlas.pricing import bs_delta, bs_price
+from volatlas.pricing import DEFAULT_RATE, bs_delta, bs_price
 from volatlas.surface import atm_iv, iv_at, skew_slope
 from volatlas.svi import arbitrage_check, fit_svi, g_function, svi_iv
 
@@ -179,3 +181,84 @@ def test_spot_series_is_the_real_220_day_window():
     assert spots["date"].iloc[0] == "2025-11-04"
     assert spots["date"].iloc[-1] == "2026-11-03"
     assert spots["spot"].between(20000, 27000).all()
+
+
+# ------------------------------------------------------------------- chain
+_CHAIN_SPOT = 23000.0
+_CHAIN_TRADE = "2026-01-05"
+_CHAIN_EXPIRY = "2026-01-08"  # 3 days after the trade date
+_CHAIN_SIGMA = 0.15
+
+
+def _synthetic_bhavcopy():
+    """Minimal bhavcopy-shaped frame: BS-priced NIFTY rows at 15% vol,
+    plus one BANKNIFTY row that every NIFTY helper must ignore."""
+    T = 3 / 365.0
+    rows = []
+    for strike in range(22400, 23601, 200):
+        for kind in ("CE", "PE"):
+            rows.append({
+                "TradDt": _CHAIN_TRADE, "FinInstrmTp": "IDO",
+                "TckrSymb": "NIFTY", "XpryDt": _CHAIN_EXPIRY,
+                "StrkPric": float(strike), "OptnTp": kind,
+                "ClsPric": float(bs_price(_CHAIN_SPOT, strike, T,
+                                          DEFAULT_RATE, _CHAIN_SIGMA, kind)),
+                "UndrlygPric": _CHAIN_SPOT, "OpnIntrst": 1000.0,
+                "TtlTradgVol": 500.0,
+            })
+    rows.append({
+        "TradDt": _CHAIN_TRADE, "FinInstrmTp": "IDO",
+        "TckrSymb": "BANKNIFTY", "XpryDt": _CHAIN_EXPIRY,
+        "StrkPric": 50000.0, "OptnTp": "CE", "ClsPric": 100.0,
+        "UndrlygPric": 51000.0, "OpnIntrst": 10.0, "TtlTradgVol": 5.0,
+    })
+    return pd.DataFrame(rows)
+
+
+def test_load_bhavcopy_csv_keeps_only_bhav_columns(tmp_path):
+    path = tmp_path / "bhav.csv"
+    frame = _synthetic_bhavcopy()
+    frame["JunkCol"] = 1
+    frame.to_csv(path, index=False)
+    loaded = load_bhavcopy(path)
+    assert "JunkCol" not in loaded.columns
+    assert len(loaded) == len(frame)
+
+
+def test_nifty_spot_and_missing_symbol():
+    assert nifty_spot(_synthetic_bhavcopy()) == pytest.approx(_CHAIN_SPOT)
+    with pytest.raises(ValueError):
+        nifty_spot(_synthetic_bhavcopy().query("TckrSymb != 'NIFTY'"))
+
+
+def test_list_expiries_respects_min_days():
+    import datetime as dt
+
+    frame = _synthetic_bhavcopy()
+    trade = dt.date(2026, 1, 5)
+    assert list_expiries(frame, trade) == [dt.date(2026, 1, 8)]
+    assert list_expiries(frame, trade, min_days=4) == []
+
+
+def test_extract_chain_shape_and_tenor():
+    import datetime as dt
+
+    chain = extract_chain(_synthetic_bhavcopy(), dt.date(2026, 1, 8))
+    assert len(chain) == 14  # 7 strikes x CE/PE, BANKNIFTY excluded
+    assert chain["days_to_expiry"].eq(3).all()
+    assert np.allclose(chain["T"], 3 / 365.0)
+    assert chain["strike"].is_monotonic_increasing or len(chain) == 14
+
+
+def test_chain_iv_otm_only_and_recovers_sigma():
+    import datetime as dt
+
+    chain = extract_chain(_synthetic_bhavcopy(), dt.date(2026, 1, 8))
+    smile = chain_iv(chain)
+    assert not smile.empty
+    ce = smile[smile["kind"] == "CE"]
+    pe = smile[smile["kind"] == "PE"]
+    assert (ce["strike"] >= _CHAIN_SPOT).all()  # calls at/above spot only
+    assert (pe["strike"] < _CHAIN_SPOT).all()   # puts below spot only
+    assert smile["log_moneyness"].abs().le(0.20).all()
+    assert np.allclose(smile["iv"], _CHAIN_SIGMA, atol=1e-4)

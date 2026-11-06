@@ -1,7 +1,7 @@
 # VolSurface Atlas — NIFTY Implied-Volatility Surfaces from Real NSE Data
 
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-22%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-27%20passing-brightgreen)
 ![Data](https://img.shields.io/badge/data-NSE%20bhavcopy%20(real)-orange)
 ![Slices](https://img.shields.io/badge/SVI%20slices%20fitted-69-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -35,7 +35,7 @@ strike-by-strike.
 pip install -r requirements.txt   # numpy, pandas, scipy (pytest for tests)
 python main.py                    # event cases + PCA + SVI summary
 python main.py --dashboard        # also regenerates docs/dashboard.html
-python -m pytest tests            # 22 tests
+python -m pytest tests            # 27 tests
 ```
 
 Open [`docs/dashboard.html`](docs/dashboard.html) — a single
@@ -153,7 +153,7 @@ src/volatlas/   pricing.py (BS price/delta/vega) · iv.py (solver, no-arb honest
 scripts/        build_panel.py (raw bhavcopy -> data/) · run_analysis.py
 data/           iv_panel_sample.csv (1.18 MB) · nifty_spot_series.csv (220 days)
 docs/           CASES.md · dashboard.html · results.json (every quoted number)
-tests/          22 tests: pricing, IV round-trips, SVI recovery, PCA, real-panel invariants
+tests/          27 tests: pricing, IV round-trips, SVI recovery, PCA, chain extraction, real-panel invariants
 main.py         CLI — prints the cases, writes docs/results.json
 ```
 
